@@ -1,0 +1,119 @@
+---
+title: "Making growth curve with data from eVOLVER"
+author: "cmkim"
+date: "2023-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+##### Loading library
+
+```{r library}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+```
+
+##### Loading data
+Data from eVOLVER is saved in .csv format.
+Each value means optical value sensed by each sleeve, every 1 second.
+"Seonsor.value" means raw value from sensor, "OD.value" means calibrated value of Sensor.value.
+```{r loading_data}
+data <- read.csv("/Users/chungminkim/5projects/08MB_interaction/MHB_ZGAL/od_save_9445.csv")
+data <- as.data.frame(data)
+head(data)
+```
+
+##### Input OD value measured at start point & end point of growth
+Raw value is converted into OD value.
+You can use calibrated data by changing column.
+```{r growth data}
+ODstart1 <- 0.042
+ODfinish1 <- 0.705
+
+ODstart2 <- 0.04
+ODfinish2 <- 0.782
+
+ODstart4 <- 0.044
+ODfinish4 <- 0.678
+
+n <- nrow(data)
+
+growthS1 <- colMeans(data[(n-1200):n, 1, drop=F]) - colMeans(data[1:1200, 1, drop=F])
+growthS2 <- colMeans(data[(n-1200):n, 2, drop=F]) - colMeans(data[1:1200, 2, drop=F])
+growthS4 <- colMeans(data[(n-1200):n, 4, drop=F]) - colMeans(data[1:1200, 4, drop=F])
+
+growth1 <- ODfinish1 - ODstart1
+growth2 <- ODfinish2 - ODstart2
+growth4 <- ODfinish4 - ODstart4
+
+for(i in 1:n){
+  data[i,5] <- (data[i,1] - data[1,1])*growth1/growthS1 + ODstart1
+}
+for(i in 1:n){
+  data[i,6] <- (data[i,2] - data[1,2])*growth2/growthS2 + ODstart2
+}
+for(i in 1:n){
+  data[i,8] <- (data[i,4] - data[1,4])*growth4/growthS4 + ODstart4
+}
+head(data[ ,5:8])
+```
+
+##### OD curve table
+Making OD curve table which contains mean OD value sensed for 20 minutes (1,200 seconds).
+```{r OD curve table}
+ODcurve <- data.frame(OD=numeric(0), time=numeric(0), sleeve=character())
+for(i in 1:(floor(n/1200)-1)){
+  ODcurve[nrow(ODcurve)+1, ] <- c(colMeans(data[((i-1)*1200+1):(i*1200), 5, drop=F]),
+                                  (1/3)*(i-1), "sleeve1")
+}
+for(i in 1:floor(n/1200)){
+  ODcurve[nrow(ODcurve)+1, ] <- c(colMeans(data[((i-1)*1200+1):(i*1200), 6, drop=F]),
+                                  (1/3)*(i-1), "sleeve2")
+}
+for(i in 1:floor(n/1200)){
+  ODcurve[nrow(ODcurve)+1, ] <- c(colMeans(data[((i-1)*1200+1):(i*1200), 8, drop=F]),
+                                  (1/3)*(i-1), "sleeve4")
+}
+ODcurve1 <- head(ODcurve, n=3)
+ODcurve2 <- head(ODcurve[(floor(n/1200)):(2*floor(n/1200)),], n=3)
+ODcurve3 <- head(ODcurve[(2*floor(n/1200)):(3*floor(n/1200)),], n=3)
+
+rbind(ODcurve1, ODcurve2, ODcurve3)
+```
+
+
+##### OD plot table
+To make Growth curve, calculate mean values and standard deviations of OD.
+```{r Growth cruve table}
+ODcurve$OD <- as.numeric(ODcurve$OD)
+ODcurve$time <- as.numeric(ODcurve$time)
+ODplot <- ODcurve %>% group_by(time) %>%
+  summarize(OD_avg=mean(OD), OD_sd=sd(OD))
+ODplot <-ODplot %>% arrange(time)
+
+head(ODplot)
+```
+
+##### Making growth curve
+```{r Growth cruve}
+my_title <-  expression(paste(bold("Growth Curve of "), bolditalic("Z. galactanivoran"), bold( " Dsij")))
+ODplot %>% 
+#  filter(time<12.1) %>%
+  ggplot(aes(x=time, y=OD_avg)) +
+  geom_line() +
+  geom_point(size=5) +
+  #  geom_smooth() +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, size=30, face="bold"),
+        axis.title = element_text(hjust = 0.5, size=30, face="bold"),
+        axis.text.x = element_text(size=30),
+        axis.text.y = element_text(size=30),
+        axis.ticks.length = unit(.3, "cm"),
+        legend.text=element_text(size=30)) +
+  labs(title = my_title, x = 'Time(hour)', y = 'OD600') +
+  geom_errorbar(aes(x=time, ymin=OD_avg-OD_sd, ymax=OD_avg+OD_sd), width=0.3)
+```
